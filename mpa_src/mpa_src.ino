@@ -8,7 +8,9 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
+#include <Adafruit_NeoPixel.h>
 
+// BLE UUIDs
 #define UUID_SUFFIX     "-8f3a-4c1e-9b7a-0a1b2c3d4e5f"
 #define SVC_PROV_UUID   "6d500010" UUID_SUFFIX
 #define CHR_CMD_UUID    "6d500011" UUID_SUFFIX   // "start" | "stop"
@@ -16,8 +18,13 @@
 #define SVC_DATA_UUID   "6d500020" UUID_SUFFIX
 #define CHR_IMU_UUID    "6d500021" UUID_SUFFIX
 
+// Data
 #define SAMPLE_HZ   400
 #define BATCH_SIZE  9     // amostras por pacote BLE
+
+// RGB LED
+#define PIN_RGB 48
+#define NUM_LEDS 1
 
 // Define a estrutura de dados do IMU
 // 18 bytes: cabe no MTU padrão (23 -> 20 bytes úteis, 3 bytes de overhead).
@@ -48,6 +55,9 @@ uint32_t lastSampleUs = 0;
 
 ImuBatch batch;
 uint8_t  batchFill = 0;   // quantas amostras já foram colocadas no pacote atual
+
+// Configura o LED RGB
+Adafruit_NeoPixel strip(NUM_LEDS, PIN_RGB, NEO_GRB + NEO_KHZ800);
 
 // Define o status do BLE
 void setStatus(const String& s) {
@@ -104,9 +114,21 @@ class WriteCB : public BLECharacteristicCallbacks {
   }
 };
 
+// Lógica de piscagem de LED
+void blink_led(int red, int green, int blue) {
+    strip.setPixelColor(0, strip.Color(red, green, blue));
+    strip.show();
+    delay(250);
+    strip.setPixelColor(0, strip.Color(0, 0, 0));
+    strip.show();
+    delay(250);
+};
+
 void setup() {
   Serial.begin(115200);
   delay(1500);
+  strip.begin();
+  strip.show(); // inicia os LEDs desligados
 
   // Define o nome do dispositivo ao ser descoberto
   char name[16];
@@ -143,8 +165,16 @@ void setup() {
 }
 
 void loop() {
+  if (!connected) {
+    blink_led(0,0,255); // LED pisca em azul
+  } else {
+    strip.setPixelColor(0, strip.Color(0, 255, 0)); // LED aceso em verde
+    strip.show();
+  }
   // Stream fake de IMU
   if (streaming && connected) {
+    blink_led(255,0,0); // LED pisca em vermelho
+
     uint32_t now = micros();
     if (now - lastSampleUs >= 1000000UL / SAMPLE_HZ) {
       lastSampleUs = now;
