@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>MPA - Medidor de Performance Atlética</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #111;
+    color: #eee;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr 1fr;
+    gap: 8px;
+    padding: 8px;
+    height: 100vh;
+  }
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: #1c1c1c;
+    border-radius: 8px;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  button {
+    background: #2a6df4;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:disabled { background: #444; cursor: not-allowed; }
+  button.stop { background: #d33; }
+  #status {
+    margin-left: auto;
+    font-size: 13px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #333;
+  }
+  #status.ok { background: #1e6b2e; }
+  #status.err { background: #8b1e1e; }
+  .panel {
+    background: #1c1c1c;
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel h2 {
+    font-size: 12px;
+    margin: 0 0 6px 0;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  canvas { width: 100%; flex: 1; display: block; background: #000; border-radius: 4px; }
+  #diag {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #ccc;
+    overflow: auto;
+    flex: 1;
+  }
+  #diag b { color: #6cf; }
+  #cubeWrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 600px;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #cube {
+    width: 120px;
+    height: 120px;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.05s linear;
+  }
+  .face {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border: 2px solid #444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: bold;
+    color: #fff;
+    opacity: 0.85;
+  }
+  .face.front  { background: #2a6df4; transform: translateZ(60px); }
+  .face.back   { background: #d33;    transform: rotateY(180deg) translateZ(60px); }
+  .face.right  { background: #1e6b2e; transform: rotateY(90deg) translateZ(60px); }
+  .face.left   { background: #b80;    transform: rotateY(-90deg) translateZ(60px); }
+  .face.top    { background: #777;    transform: rotateX(90deg) translateZ(60px); }
+  .face.bottom { background: #333;    transform: rotateX(-90deg) translateZ(60px); }
+
+  /* ---- Mapeamento / sessões ---- */
+  button.ghost { background: #333; }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  #overlay.open { display: flex; }
+  #overlay .card {
+    background: #1c1c1c;
+    border-radius: 10px;
+    padding: 16px;
+    width: min(880px, 94vw);
+    max-height: 92vh;
+    overflow: auto;
+  }
+  .cardhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .cardhead h3 { margin: 0; font-size: 16px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .view label { display: block; font-size: 13px; color: #aaa; margin-bottom: 12px; }
+  .view input[type=text], .view input[type=number], .view select {
+    display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
+    background: #111; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 15px;
+  }
+  .view label.check { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+  .hint { font-size: 12px; color: #999; line-height: 1.5; margin: 8px 0; }
+  .err { color: #f77; font-size: 13px; min-height: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #runBig { font-size: 64px; font-weight: 700; text-align: center; padding: 24px 0 4px; }
+  #runSub { text-align: center; color: #aaa; font-size: 14px; min-height: 20px; margin-bottom: 8px; }
+  .item {
+    display: flex; align-items: center; gap: 10px; padding: 10px;
+    background: #262626; border-radius: 8px; margin-bottom: 8px;
+  }
+  .itemmain { flex: 1; cursor: pointer; }
+  .itemmain:hover .itemtitle { color: #6cf; }
+  .itemtitle { font-weight: 600; font-size: 15px; }
+  .itemsub { font-size: 12px; color: #999; margin-top: 2px; }
+  #vSession canvas { width: 100%; height: 190px; flex: none; margin-top: 8px; }
+  #sessInfo { font-size: 13px; color: #ccc; line-height: 1.6; }
+  #sessInfo .bad { color: #f77; font-weight: 600; }
+  #sessInfo .good { color: #6d6; }
+
+  /* ---- Análise ---- */
+  #vAnalysis .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 12px 0;
+  }
+  #vAnalysis .metric {
+    background: #262626;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  #vAnalysis .metric .lbl {
+    font-size: 11px;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #vAnalysis .metric .val {
+    font-size: 28px;
+    font-weight: 700;
+    margin-top: 4px;
+    color: #6cf;
+  }
+  #vAnalysis .metric .unit {
+    font-size: 12px;
+    color: #888;
+    font-weight: 400;
+  }
+  #repTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  #repTable th, #repTable td {
+    padding: 6px 8px;
+    text-align: right;
+    border-bottom: 1px solid #333;
+  }
+  #repTable th {
+    color: #aaa;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #repTable th:first-child, #repTable td:first-child { text-align: left; }
+  #repTable .discard { color: #666; font-style: italic; }
+  #analysisMsg { font-size: 13px; color: #f77; min-height: 18px; margin: 8px 0; }
+  #analysisMsg.good { color: #6d6; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MPA — Medidor de Performance Atlética</h1>
+  <button id="btnConnect">Conectar</button>
+  <button id="btnStart" disabled>Start</button>
+  <button id="btnStop" class="stop" disabled>Stop</button>
+  <button id="btnMap" disabled>Iniciar mapeamento</button>
+  <button id="btnSessions" disabled>Sessões salvas</button>
+  <span id="status">Desconectado</span>
+</header>
+
+<div class="panel">
+  <h2>Acelerômetro (ax, ay, az)</h2>
+  <canvas id="accCanvas"></canvas>
+</div>
+
+<div class="panel">
+  <h2>Orientação (gravidade)</h2>
+  <div id="cubeWrap">
+    <div id="cube">
+      <div class="face front">+X</div>
+      <div class="face back">−X</div>
+      <div class="face right">+Y</div>
+      <div class="face left">−Y</div>
+      <div class="face top">+Z</div>
+      <div class="face bottom">−Z</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Giroscópio (gx, gy, gz)</h2>
+  <canvas id="gyrCanvas"></canvas>
+</div>
+
+<div class="panel">
+  <h2>Magnitude da aceleração + Diagnóstico</h2>
+  <canvas id="magCanvas" style="flex:1; margin-bottom:6px;"></canvas>
+  <div id="diag">
+    <div>Batches: <b id="dBatches">0</b></div>
+    <div>Amostras: <b id="dSamples">0</b></div>
+    <div>Taxa: <b id="dRate">0</b> amostras/s</div>
+    <div>Perdidos: <b id="dLost">0</b></div>
+    <div>Última amostra:</div>
+    <div>t=<b id="dT">0</b> seq=<b id="dSeq">0</b></div>
+    <div>ax=<b id="dAx">0</b> ay=<b id="dAy">0</b> az=<b id="dAz">0</b></div>
+    <div>gx=<b id="dGx">0</b> gy=<b id="dGy">0</b> gz=<b id="dGz">0</b></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <div class="cardhead"><h3 id="cardTitle"></h3><button id="btnCloseOverlay" class="ghost small">Fechar</button></div>
+
+    <div id="vForm" class="view">
+      <label>Nome do atleta
+        <input id="inAthlete" type="text" maxlength="19" placeholder="Ex.: João Silva" autocomplete="off">
+      </label>
+      <label>Exercício
+        <select id="inExercise">
+          <option value="agachamento">Agachamento</option>
+          <option value="supino">Supino</option>
+          <option value="terra">Terra</option>
+        </select>
+      </label>
+      <label>Carga (kg) — opcional
+        <input id="inLoad" type="number" min="0" max="999" step="0.5" placeholder="Ex.: 60">
+      </label>
+      <p class="hint">Ao clicar em Start, mantenha a barra <b>parada</b> no suporte (ou no chão) durante 1 segundo
+        (calibração do giroscópio). A contagem de 5 segundos corre em seguida; a gravação começa em zero.</p>
+      <div id="formMsg" class="err"></div>
+      <div class="row"><button id="btnRecStart">Start</button></div>
+    </div>
+
+    <div id="vRun" class="view">
+      <div id="runBig"></div>
+      <div id="runSub"></div>
+      <div class="row" style="justify-content:center"><button id="btnRecStop" class="stop">Cancelar</button></div>
+    </div>
+
+    <div id="vDone" class="view">
+      <p id="doneMsg"></p>
+      <div class="row">
+        <button id="btnDoneSend">Ir para sessões</button>
+        <button id="btnDoneNew" class="ghost">Novo mapeamento</button>
+      </div>
+    </div>
+
+    <div id="vList" class="view">
+      <div id="listInfo" class="hint"></div>
+      <div id="listBody"></div>
+      <label class="check"><input type="checkbox" id="chkDelAfter"> Apagar do aparelho após baixar</label>
+      <div class="row">
+        <button id="btnListRefresh" class="ghost">Atualizar</button>
+        <button id="btnForceStop" class="ghost">Parar gravação no aparelho</button>
+      </div>
+    </div>
+
+    <div id="vSession" class="view">
+      <div id="sessInfo"></div>
+      <canvas id="sessAcc"></canvas>
+      <canvas id="sessGyr"></canvas>
+      <div class="row">
+        <button id="btnSessAnalyze">Analisar</button>
+        <button id="btnSessCsv">Baixar CSV</button>
+        <button id="btnSessDel" class="stop">Apagar do aparelho</button>
+        <button id="btnSessBack" class="ghost">Voltar à lista</button>
+      </div>
+    </div>
+
+    <div id="vAnalysis" class="view">
+      <div id="analysisMsg"></div>
+      <div class="metrics">
+        <div class="metric"><div class="lbl">MCV médio</div><div class="val" id="mcvVal">—</div><div class="unit">m/s</div></div>
+        <div class="metric"><div class="lbl">MVT</div><div class="val" id="mvtVal">—</div><div class="unit">m/s</div></div>
+        <div class="metric"><div class="lbl">VL%</div><div class="val" id="vlVal">—</div><div class="unit">%</div></div>
+      </div>
+      <div class="hint" id="repInfo"></div>
+      <table id="repTable">
+        <thead><tr><th>Rep</th><th>MCV (m/s)</th><th>PV (m/s)</th><th>T conc (s)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <canvas id="velCanvas"></canvas>
+      <div class="row">
+        <button id="btnAnalyzeCsv" class="ghost">Baixar CSV com análise</button>
+        <button id="btnAnalyzeBack" class="ghost">Voltar à sessão</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// UUIDs (do firmware mpa_src.ino)
+// ============================================================
+const UUID_SUFFIX = "-8f3a-4c1e-9b7a-0a1b2c3d4e5f";
+const SVC_PROV_UUID   = "6d500010" + UUID_SUFFIX;
+const CHR_CMD_UUID    = "6d500011" + UUID_SUFFIX;
+const CHR_STATUS_UUID = "6d500012" + UUID_SUFFIX;
+const SVC_DATA_UUID   = "6d500020" + UUID_SUFFIX;
+const CHR_IMU_UUID    = "6d500021" + UUID_SUFFIX;
+const CHR_XFER_UUID   = "6d500022" + UUID_SUFFIX;
+
+// ============================================================
+// Configuração de visualização (tempo real)
+// ============================================================
+const DOWNSAMPLE = 10;
+const MAX_POINTS = 400;
+const BATCH_HEADER = 3;
+const SAMPLE_SIZE  = 18;
+
+// ============================================================
+// Configuração da sessão (.bin)
+// ============================================================
+const SESSION_HEADER_V1 = 64;
+const SESSION_HEADER_V2 = 68;
+const SESSION_SAMPLE = 12;
+const SESSION_RATE = 400;
+const ACC_LSB_PER_G = 4096;         // ±8g
+const GYR_LSB_PER_DPS = 16.4;       // ±2000 dps
+const G_CONST = 9.80665;
+const FILT_FC = 10.0;               // Hz
+const FILT_ORDER = 2;
+const V_MIN = 0.05;                 // m/s
+const N_STATIC = 200;               // amostras iniciais para estimar gravidade
+
+// ============================================================
+// Estado geral
+// ============================================================
+let device = null;
+let server = null;
+let chCmd = null, chStatus = null, chImu = null, chXfer = null;
+let streaming = false;
+let imuError = false;
+
+let sampleCounter = 0;
+let totalSamples = 0;
+let totalBatches = 0;
+let lostBatches = 0;
+let lastBatchSeq = -1;
+let rateWindow = [];
+let lastSample = null;
+
+const accBuf = { ax: [], ay: [], az: [] };
+const gyrBuf = { gx: [], gy: [], gz: [] };
+const magBuf = [];
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = cls || "";
+}
+
+// ============================================================
+// Gráficos em tempo real
+// ============================================================
+function drawLines(canvas, series, colors, yMin, yMax, labels) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+    canvas.width  = rect.width  * dpr;
+    canvas.height = rect.height * dpr;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = rect.width, h = rect.height;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.strokeStyle = "#222"; ctx.lineWidth = 1;
+  for (let i = 1; i < 5; i++) {
+    const y = (h / 5) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  const zeroY = h - ((0 - yMin) / (yMax - yMin)) * h;
+  ctx.strokeStyle = "#444";
+  ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
+
+  const range = yMax - yMin;
+  const n = series[0].length;
+  if (n < 2) return;
+
+  for (let s = 0; s < series.length; s++) {
+    ctx.strokeStyle = colors[s];
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = (i / (MAX_POINTS - 1)) * w;
+      const v = series[s][i];
+      const y = h - ((v - yMin) / range) * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  if (labels) {
+    ctx.font = "11px monospace";
+    for (let i = 0; i < labels.length; i++) {
+      ctx.fillStyle = colors[i];
+      ctx.fillText(labels[i], 6 + i * 60, 14);
+    }
+  }
+  ctx.fillStyle = "#888";
+  ctx.font = "10px monospace";
+  ctx.fillText(yMax.toFixed(0), 4, 10);
+  ctx.fillText(yMin.toFixed(0), 4, h - 4);
+}
+
+// ============================================================
+// Cubo 3D
+// ============================================================
+const cubeEl = $("cube");
+function updateCube(ax, ay, az) {
+  const g = Math.sqrt(ax*ax + ay*ay + az*az) || 1;
+  const gx = ax / g, gy = ay / g, gz = az / g;
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -gx))) * 180 / Math.PI;
+  const roll  = Math.atan2(gy, gz) * 180 / Math.PI;
+  cubeEl.style.transform = `rotateX(${roll}deg) rotateY(${pitch}deg)`;
+}
+
+// ============================================================
+// Parse de batch ao vivo
+// ============================================================
+function parseBatch(dataView) {
+  const batchSeq = dataView.getUint16(0, true);
+  const count = dataView.getUint8(2);
+  const needed = BATCH_HEADER + count * SAMPLE_SIZE;
+  if (dataView.byteLength < needed) {
+    setStatus(`Pacote truncado (${dataView.byteLength}/${needed}): MTU baixo`, "err");
+    return;
+  }
+  if (lastBatchSeq >= 0) {
+    const expected = (lastBatchSeq + 1) & 0xFFFF;
+    if (batchSeq !== expected) {
+      const diff = (batchSeq - expected + 0x10000) & 0xFFFF;
+      lostBatches += diff;
+    }
+  }
+  lastBatchSeq = batchSeq;
+  totalBatches++;
+
+  let offset = BATCH_HEADER;
+  for (let i = 0; i < count; i++) {
+    const t_ms = dataView.getUint32(offset, true);
+    const seq  = dataView.getUint16(offset + 4, true);
+    const ax   = dataView.getInt16(offset + 6, true);
+    const ay   = dataView.getInt16(offset + 8, true);
+    const az   = dataView.getInt16(offset + 10, true);
+    const gx   = dataView.getInt16(offset + 12, true);
+    const gy   = dataView.getInt16(offset + 14, true);
+    const gz   = dataView.getInt16(offset + 16, true);
+    offset += SAMPLE_SIZE;
+    totalSamples++;
+    lastSample = { t_ms, seq, ax, ay, az, gx, gy, gz };
+    sampleCounter++;
+    if (sampleCounter >= DOWNSAMPLE) {
+      sampleCounter = 0;
+      pushSample(lastSample);
+    }
+  }
+  updateDiag();
+}
+
+function pushSample(s) {
+  accBuf.ax.push(s.ax); accBuf.ay.push(s.ay); accBuf.az.push(s.az);
+  gyrBuf.gx.push(s.gx); gyrBuf.gy.push(s.gy); gyrBuf.gz.push(s.gz);
+  magBuf.push(Math.sqrt(s.ax*s.ax + s.ay*s.ay + s.az*s.az));
+  if (accBuf.ax.length > MAX_POINTS) {
+    accBuf.ax.shift(); accBuf.ay.shift(); accBuf.az.shift();
+    gyrBuf.gx.shift(); gyrBuf.gy.shift(); gyrBuf.gz.shift();
+    magBuf.shift();
+  }
+}
+
+function render() {
+  if (lastSample) {
+    drawLines($("accCanvas"), [accBuf.ax, accBuf.ay, accBuf.az],
+              ["#f44", "#4f4", "#48f"], -20000, 20000, ["ax","ay","az"]);
+    drawLines($("gyrCanvas"), [gyrBuf.gx, gyrBuf.gy, gyrBuf.gz],
+              ["#f44", "#4f4", "#48f"], -32768, 32767, ["gx","gy","gz"]);
+    drawLines($("magCanvas"), [magBuf], ["#fc4"], 0, 25000, ["|a|"]);
+    updateCube(lastSample.ax, lastSample.ay, lastSample.az);
+  }
+  requestAnimationFrame(render);
+}
+
+function updateDiag() {
+  const now = performance.now();
+  rateWindow.push({ t: now, n: totalSamples });
+  while (rateWindow.length > 0 && now - rateWindow[0].t > 1000) rateWindow.shift();
+  let rate = 0;
+  if (rateWindow.length >= 2) {
+    const first = rateWindow[0], last = rateWindow[rateWindow.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    if (dt > 0) rate = Math.round((last.n - first.n) / dt);
+  }
+  $("dBatches").textContent = totalBatches;
+  $("dSamples").textContent = totalSamples;
+  $("dRate").textContent = rate;
+  $("dLost").textContent = lostBatches;
+  if (lastSample) {
+    $("dT").textContent = lastSample.t_ms;
+    $("dSeq").textContent = lastSample.seq;
+    $("dAx").textContent = lastSample.ax;
+    $("dAy").textContent = lastSample.ay;
+    $("dAz").textContent = lastSample.az;
+    $("dGx").textContent = lastSample.gx;
+    $("dGy").textContent = lastSample.gy;
+    $("dGz").textContent = lastSample.gz;
+  }
+}
+
+// ============================================================
+// BLE
+// ============================================================
+async function connect() {
+  try {
+    setStatus("Solicitando dispositivo...");
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SVC_PROV_UUID] }],
+      optionalServices: [SVC_DATA_UUID]
+    });
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+
+    setStatus("Conectando GATT...");
+    server = await device.gatt.connect();
+
+    const provSvc = await server.getPrimaryService(SVC_PROV_UUID);
+    chCmd    = await provSvc.getCharacteristic(CHR_CMD_UUID);
+    chStatus = await provSvc.getCharacteristic(CHR_STATUS_UUID);
+
+    await chStatus.startNotifications();
+    chStatus.addEventListener("characteristicvaluechanged", (e) => {
+      const txt = new TextDecoder().decode(e.target.value);
+      console.log("[status]", txt);
+      if (handleMappingStatus(txt)) return;
+      if (txt === "imu_error") {
+        imuError = true; streaming = false;
+        setStatus("Erro: IMU não inicializou", "err");
+        $("btnStart").disabled = false;
+        $("btnStop").disabled = true;
+      } else if (txt === "calibrating") setStatus("Calibrando... mantenha a barra parada");
+      else if (txt === "streaming") setStatus("Streaming ativo", "ok");
+      else if (txt === "calib_moving") {
+        streaming = false;
+        setStatus("A barra se mexeu. Apoie no rack e clique em Start de novo", "err");
+        $("btnStart").disabled = false;
+        $("btnStop").disabled = true;
+      }
+    });
+
+    const dataSvc = await server.getPrimaryService(SVC_DATA_UUID);
+    chImu = await dataSvc.getCharacteristic(CHR_IMU_UUID);
+    await chImu.startNotifications();
+    chImu.addEventListener("characteristicvaluechanged", (e) => parseBatch(e.target.value));
+
+    chXfer = await dataSvc.getCharacteristic(CHR_XFER_UUID);
+    await chXfer.startNotifications();
+    chXfer.addEventListener("characteristicvaluechanged", (e) => onXferPacket(e.target.value));
+
+    setStatus("Conectado: " + device.name, "ok");
+    $("btnStart").disabled = false;
+    $("btnMap").disabled = false;
+    $("btnSessions").disabled = false;
+  } catch (err) {
+    console.error(err);
+    setStatus("Erro: " + err.message, "err");
+  }
+}
+
+function onDisconnected() {
+  setStatus("Desconectado");
+  $("btnStart").disabled = true;
+  $("btnStop").disabled = true;
+  $("btnMap").disabled = true;
+  $("btnSessions").disabled = true;
+  streaming = false;
+  mapState = "idle";
+  stopElapsed();
+  updateMapButton();
+  closeOverlay();
+}
+
+async function startStream() {
+  if (!chCmd) return;
+  if (mapState !== "idle") { setStatus("Mapeamento em andamento", "err"); return; }
+  try {
+    imuError = false;
+    lastBatchSeq = -1;
+    sampleCounter = 0; totalSamples = 0; totalBatches = 0; lostBatches = 0;
+    rateWindow = [];
+    for (const k in accBuf) accBuf[k].length = 0;
+    for (const k in gyrBuf) gyrBuf[k].length = 0;
+    magBuf.length = 0;
+    await chCmd.writeValue(new TextEncoder().encode("start"));
+    if (imuError) return;
+    streaming = true;
+    $("btnStart").disabled = true;
+    $("btnStop").disabled = false;
+    setStatus("Streaming ativo", "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus("Erro ao iniciar: " + err.message, "err");
+  }
+}
+
+async function stopStream() {
+  if (!chCmd) return;
+  try {
+    await chCmd.writeValue(new TextEncoder().encode("stop"));
+    streaming = false;
+    $("btnStart").disabled = false;
+    $("btnStop").disabled = true;
+    setStatus("Stream parado");
+  } catch (err) { setStatus("Erro ao parar: " + err.message, "err"); }
+}
+
+// ============================================================
+// Mapeamento
+// ============================================================
+let mapState = "idle";
+let recStartTs = 0, elapsedTimer = null, maxSec = 0;
+let listEntries = [], fsInfo = null, listTimer = null;
+const sessionCache = {};
+let xfer = null;
+let currentSession = null;
+let currentAnalysis = null;
+let cmdChain = Promise.resolve();
+
+function sendCmd(text) {
+  const p = cmdChain.catch(() => {}).then(() => chCmd.writeValue(new TextEncoder().encode(text)));
+  cmdChain = p;
+  return p;
+}
+
+function showView(id, title) {
+  document.querySelectorAll("#overlay .view").forEach((v) => v.classList.remove("active"));
+  $(id).classList.add("active");
+  $("cardTitle").textContent = title;
+  $("overlay").classList.add("open");
+}
+function closeOverlay() { $("overlay").classList.remove("open"); }
+function updateMapButton() {
+  $("btnMap").textContent = mapState === "idle" ? "Iniciar mapeamento" : "Mapeamento em andamento";
+}
+function normalizeName(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\|/g, " ").trim();
+}
+function setRun(big, sub) {
+  $("runBig").textContent = big;
+  $("runSub").textContent = sub || "";
+  $("btnRecStop").textContent = mapState === "recording" ? "Stop" : "Cancelar";
+}
+function startElapsed() {
+  stopElapsed();
+  elapsedTimer = setInterval(() => {
+    const t = (performance.now() - recStartTs) / 1000;
+    const lim = maxSec ? ` (máx. ${maxSec} s)` : "";
+    $("runSub").textContent = `${t.toFixed(1)} s${lim}`;
+  }, 100);
+}
+function stopElapsed() { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } }
+function mapError(msg) {
+  mapState = "idle";
+  stopElapsed();
+  updateMapButton();
+  $("formMsg").textContent = msg;
+  showView("vForm", "Novo mapeamento");
+}
+
+function openMapping() {
+  if (mapState === "idle") {
+    $("formMsg").textContent = "";
+    showView("vForm", "Novo mapeamento");
+  } else showView("vRun", "Mapeamento");
+}
+
+async function recStart() {
+  const athlete = normalizeName($("inAthlete").value);
+  const exercise = $("inExercise").value;
+  const loadStr = $("inLoad").value.trim();
+  const load = loadStr === "" ? 0 : Math.max(0, Math.min(999, Math.round(parseFloat(loadStr) || 0)));
+  if (!athlete) { $("formMsg").textContent = "Digite o nome do atleta."; return; }
+  if (streaming) { $("formMsg").textContent = "Pare o stream ao vivo antes de mapear."; return; }
+  try {
+    mapState = "calibrating";
+    updateMapButton();
+    setRun("Enviando…", "");
+    showView("vRun", "Mapeamento");
+    await sendCmd(`rec|${athlete}|${exercise}|${load}`);
+  } catch (err) {
+    console.error(err);
+    mapError("Erro ao enviar o comando: " + err.message);
+  }
+}
+
+async function recStop() {
+  try { await sendCmd("recstop"); }
+  catch (err) { setStatus("Erro ao parar: " + err.message, "err"); }
+}
+
+function handleMappingStatus(txt) {
+  const p = txt.split("|");
+  switch (p[0]) {
+    case "rec_calibrating":
+      mapState = "calibrating"; updateMapButton();
+      maxSec = parseInt(p[1] || "0", 10) || 0;
+      setRun("Calibrando…", "Mantenha a barra parada");
+      return true;
+    case "rec_cd":
+      mapState = "countdown"; updateMapButton();
+      setRun(p[1], "Prepare-se");
+      return true;
+    case "rec_recording":
+      mapState = "recording"; updateMapButton();
+      recStartTs = performance.now();
+      setRun("Gravando", "0.0 s");
+      startElapsed();
+      setStatus("Gravando no aparelho", "ok");
+      return true;
+    case "rec_saving":
+      mapState = "saving"; stopElapsed();
+      setRun("Salvando…", "");
+      return true;
+    case "rec_saved": {
+      mapState = "idle"; stopElapsed(); updateMapButton();
+      const count = parseInt(p[2], 10), missed = parseInt(p[3], 10);
+      let msg = `Salvo: ${p[1]} — ${count} amostras (${(count / SESSION_RATE).toFixed(1)} s). Perdidas: ${missed}.`;
+      if (p[4] === "full") msg += " O buffer encheu.";
+      if (p[4] === "i2c") msg += " Encerrado por falha I2C.";
+      $("doneMsg").textContent = msg;
+      showView("vDone", "Mapeamento concluído");
+      setStatus("Sessão salva", "ok");
+      return true;
+    }
+    case "rec_calib_moving":
+      mapError("A barra se mexeu durante a calibração. Deixe-a parada e tente de novo.");
+      return true;
+    case "rec_cancelled": mapError("Mapeamento cancelado."); return true;
+    case "rec_busy":      mapError("O aparelho está ocupado."); return true;
+    case "rec_nomem":     mapError("Sem memória para gravar."); return true;
+    case "rec_empty":     mapError("Nenhuma amostra foi gravada."); return true;
+    case "fs_error":      mapError("Sistema de arquivos indisponível."); return true;
+    case "rec_error":
+      mapError("Erro ao salvar: " + (p[1] === "sem-espaco" ? "sem espaço. Apague sessões antigas." : (p[1] || "desconhecido")));
+      return true;
+    case "imu_error":
+      if (mapState !== "idle") { mapError("Sensor não respondeu."); return true; }
+      return false;
+    case "fs":
+      fsInfo = { used: parseInt(p[1], 10), total: parseInt(p[2], 10) };
+      return true;
+    case "file":
+      listEntries.push({
+        name: p[1], size: parseInt(p[2], 10), count: parseInt(p[3], 10),
+        missed: parseInt(p[4], 10), athlete: p[5] || "", exercise: p[6] || ""
+      });
+      return true;
+    case "list_end":
+      renderList();
+      return true;
+    case "xfer_start":
+      if (xfer && xfer.name === p[1] && xfer.size !== parseInt(p[2], 10)) {
+        xfer.size = parseInt(p[2], 10);
+        xfer.buf = new Uint8Array(xfer.size);
+      }
+      return true;
+    case "xfer_end":
+      if (xfer && xfer.name === p[1]) {
+        xfer.endAt = performance.now();
+        if (xfer.received >= xfer.size) endTransfer("ok");
+      }
+      return true;
+    case "get_error":
+      endTransfer("o aparelho não encontrou o arquivo");
+      return true;
+    case "del_ok":
+      listEntries = listEntries.filter((e) => e.name !== p[1]);
+      if ($("vSession").classList.contains("active")) showView("vList", "Sessões salvas");
+      renderList();
+      return true;
+    case "del_error":
+      $("listInfo").textContent = "Não foi possível apagar " + p[1] + ".";
+      return true;
+  }
+  return false;
+}
+
+// ---- lista
+function openSessions() {
+  showView("vList", "Sessões salvas no aparelho");
+  if (mapState !== "idle") {
+    $("listInfo").textContent = "Termine o mapeamento antes de listar.";
+    $("listBody").innerHTML = "";
+    return;
+  }
+  requestList();
+}
+
+async function requestList() {
+  if (mapState !== "idle") return;
+  listEntries = []; fsInfo = null;
+  $("listInfo").textContent = "Lendo lista…";
+  $("listBody").innerHTML = "";
+  clearTimeout(listTimer);
+  listTimer = setTimeout(() => {
+    $("listInfo").textContent = "Sem resposta. Use 'Parar gravação no aparelho'.";
+  }, 4000);
+  try { await sendCmd("list"); }
+  catch (err) { $("listInfo").textContent = "Erro: " + err.message; }
+}
+
+function renderList() {
+  clearTimeout(listTimer);
+  const info = fsInfo ? `Memória: ${(fsInfo.used/1024).toFixed(0)} KB de ${(fsInfo.total/1024).toFixed(0)} KB. ` : "";
+  $("listInfo").textContent = info + (listEntries.length ? `${listEntries.length} sessão(ões). Clique para abrir.` : "Nenhuma sessão.");
+  const body = $("listBody");
+  body.innerHTML = "";
+  for (const e of listEntries) {
+    const row = document.createElement("div");
+    row.className = "item";
+    const main = document.createElement("div");
+    main.className = "itemmain";
+    const title = document.createElement("div");
+    title.className = "itemtitle";
+    title.textContent = `${e.athlete || "?"} · ${e.exercise || "?"}`;
+    const sub = document.createElement("div");
+    sub.className = "itemsub";
+    sub.textContent = `${e.name} — ${(e.count/SESSION_RATE).toFixed(1)} s, ${e.count} amostras, perdidas: ${e.missed}, ${(e.size/1024).toFixed(0)} KB` +
+                      (sessionCache[e.name] ? " · baixado" : "");
+    main.append(title, sub);
+    main.addEventListener("click", () => openSession(e.name));
+    const bDel = document.createElement("button");
+    bDel.className = "stop small";
+    bDel.textContent = "Apagar";
+    bDel.addEventListener("click", (ev) => { ev.stopPropagation(); deleteSession(e.name); });
+    row.append(main, bDel);
+    body.append(row);
+  }
+}
+
+async function deleteSession(name) {
+  if (!confirm(`Apagar ${name} do aparelho?`)) return;
+  try { await sendCmd("del|" + name); }
+  catch (err) { $("listInfo").textContent = "Erro: " + err.message; }
+}
+
+// ---- transferência
+function beginTransfer(name, size) {
+  if (xfer && xfer.timer) clearInterval(xfer.timer);
+  xfer = { name, size, buf: new Uint8Array(size), seen: new Set(), received: 0,
+           last: performance.now(), endAt: 0, status: "running" };
+  xfer.promise = new Promise((resolve) => { xfer.resolve = resolve; });
+  xfer.timer = setInterval(() => {
+    if (!xfer || xfer.status !== "running") return;
+    const now = performance.now();
+    if (xfer.endAt && now - xfer.endAt > 1000) endTransfer("pacotes perdidos");
+    else if (now - xfer.last > 8000) endTransfer("tempo esgotado");
+  }, 250);
+}
+function endTransfer(result) {
+  if (!xfer || xfer.status !== "running") return;
+  xfer.status = result;
+  clearInterval(xfer.timer);
+  xfer.resolve(result);
+}
+function onXferPacket(dv) {
+  if (!xfer || xfer.status !== "running" || dv.byteLength <= 4) return;
+  const off = dv.getUint32(0, true);
+  const len = dv.byteLength - 4;
+  if (xfer.seen.has(off) || off + len > xfer.buf.length) return;
+  xfer.buf.set(new Uint8Array(dv.buffer, dv.byteOffset + 4, len), off);
+  xfer.seen.add(off);
+  xfer.received += len;
+  xfer.last = performance.now();
+  $("listInfo").textContent = `Baixando ${xfer.name}: ${Math.round((100*xfer.received)/xfer.size)}%`;
+  if (xfer.received >= xfer.size) endTransfer("ok");
+}
+
+async function downloadSession(name) {
+  const entry = listEntries.find((e) => e.name === name);
+  if (!entry || !entry.size) return null;
+  beginTransfer(name, entry.size);
+  $("listInfo").textContent = `Baixando ${name}…`;
+  try { await sendCmd("get|" + name); }
+  catch (err) { endTransfer("erro BLE: " + err.message); }
+  const result = await xfer.promise;
+  if (result !== "ok") {
+    $("listInfo").textContent = `Falha ao baixar ${name}: ${result}.`;
+    return null;
+  }
+  const sess = parseSession(xfer.buf, name);
+  if (!sess) { $("listInfo").textContent = "Arquivo inválido."; return null; }
+  if (!sess.crcOk) {
+    $("listInfo").textContent = "CRC não confere. Baixe de novo.";
+    return null;
+  }
+  sessionCache[name] = sess;
+  return sess;
+}
+
+async function openSession(name) {
+  let sess = sessionCache[name];
+  if (!sess) {
+    sess = await downloadSession(name);
+    if (!sess) return;
+    if ($("chkDelAfter").checked) {
+      try { await sendCmd("del|" + name); } catch (e) { console.error(e); }
+    }
+  }
+  currentSession = sess;
+  currentAnalysis = null;
+  showSession(sess);
+}
+
+// ============================================================
+// Parse do .bin (tolerante a version 1 e 2)
+// ============================================================
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function parseSession(buf, name) {
+  if (buf.length < SESSION_HEADER_V1) return null;
+  const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+  if (magic !== "MPA1") return null;
+  const version = buf[4];
+  const headerSize = (version === 2) ? SESSION_HEADER_V2 : SESSION_HEADER_V1;
+  if (buf.length < headerSize) return null;
+
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const str = (o, n) => new TextDecoder().decode(buf.subarray(o, o + n)).split("\0")[0];
+
+  const h = {
+    version,
+    headerSize,
+    sampleBytes: buf[5],
+    rateHz: dv.getUint16(6, true),
+    count: dv.getUint32(8, true),
+    missed: dv.getUint32(12, true),
+    crc: dv.getUint32(16, true),
+    bootMs: dv.getUint32(20, true),
+    gyroOff: [dv.getInt16(24, true), dv.getInt16(26, true), dv.getInt16(28, true)],
+    accRange: buf[30],
+    gyrRange: buf[31],
+    athlete: str(32, 20),
+    exercise: str(52, 12),
+    loadKg: (version === 2) ? dv.getUint16(64, true) : 0
+  };
+  if (h.sampleBytes !== SESSION_SAMPLE) return null;
+  const n = Math.floor((buf.length - headerSize) / SESSION_SAMPLE);
+  if (n !== h.count) return null;
+
+  const data = buf.subarray(headerSize, headerSize + n * SESSION_SAMPLE);
+  const crcOk = crc32(data) === h.crc;
+
+  // 6 canais: gx gy gz ax ay az (nessa ordem no arquivo)
+  const ch = [0, 1, 2, 3, 4, 5].map(() => new Float32Array(n));
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 6; c++) {
+      ch[c][i] = dv.getInt16(headerSize + i * SESSION_SAMPLE + c * 2, true);
+    }
+  }
+  return { name, h, n, ch, crcOk };
+}
+
+// ============================================================
+// Visualização da sessão
+// ============================================================
+function showSession(sess) {
+  showView("vSession", `${sess.h.athlete} · ${sess.h.exercise}`);
+  const dur = sess.n / sess.h.rateHz;
+  $("sessInfo").innerHTML = "";
+  const lines = [
+    `Arquivo: ${sess.name}`,
+    `Versão do header: ${sess.h.version} (${sess.h.headerSize} bytes)`,
+    `Duração: ${dur.toFixed(2)} s · ${sess.n} amostras a ${sess.h.rateHz} Hz`,
+    `Carga: ${sess.h.version === 2 ? sess.h.loadKg + " kg" : "não informada (v1)"}`,
+    `Offset do giroscópio: ${sess.h.gyroOff.join(", ")} LSB`
+  ];
+  for (const l of lines) { const d = document.createElement("div"); d.textContent = l; $("sessInfo").append(d); }
+  const q = document.createElement("div");
+  const crcSpan = document.createElement("span");
+  crcSpan.className = sess.crcOk ? "good" : "bad";
+  crcSpan.textContent = sess.crcOk ? "CRC OK" : "CRC inválido";
+  const missSpan = document.createElement("span");
+  missSpan.className = sess.h.missed ? "bad" : "good";
+  missSpan.textContent = `perdidas: ${sess.h.missed}`;
+  q.append(crcSpan, " · ", missSpan);
+  $("sessInfo").append(q);
+
+  requestAnimationFrame(() => {
+    const acc = [3, 4, 5].map((c) => Float32Array.from(sess.ch[c], (v) => v / ACC_LSB_PER_G));
+    const gyr = [0, 1, 2].map((c) => Float32Array.from(sess.ch[c], (v) => (v - sess.h.gyroOff[c]) / GYR_LSB_PER_DPS));
+    drawSession($("sessAcc"), acc, ["#f44", "#4f4", "#48f"], ["ax","ay","az"], sess.h.rateHz, "g");
+    drawSession($("sessGyr"), gyr, ["#f44", "#4f4", "#48f"], ["gx","gy","gz"], sess.h.rateHz, "°/s");
+  });
+}
+
+function drawSession(canvas, series, colors, labels, rate, unit) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = rect.width, h = rect.height, padL = 48, padB = 18;
+  ctx.clearRect(0, 0, w, h);
+  const n = series[0].length;
+  if (n < 2) return;
+
+  let mn = Infinity, mx = -Infinity;
+  for (const s of series) for (let i = 0; i < n; i++) { const v = s[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (mx - mn < 1e-6) { mx += 1; mn -= 1; }
+  const pad = (mx - mn) * 0.08;
+  mn -= pad; mx += pad;
+  const pw = w - padL, ph = h - padB;
+  const Y = (v) => ph - ((v - mn) / (mx - mn)) * ph;
+
+  ctx.font = "10px monospace";
+  ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = mn + (k / 4) * (mx - mn), y = Y(v);
+    ctx.strokeStyle = "#222";
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillStyle = "#888";
+    ctx.fillText(v.toFixed(mx - mn < 5 ? 2 : 0), 2, y - 2);
+  }
+  if (mn < 0 && mx > 0) {
+    ctx.strokeStyle = "#555";
+    ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w, Y(0)); ctx.stroke();
+  }
+  const dur = (n - 1) / rate;
+  const step = dur <= 6 ? 1 : dur <= 15 ? 2 : dur <= 40 ? 5 : 10;
+  for (let t = 0; t <= dur; t += step) {
+    const x = padL + (t / dur) * pw;
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ph); ctx.stroke();
+    ctx.fillStyle = "#888";
+    ctx.fillText(t + " s", x + 2, h - 4);
+  }
+
+  const cols = Math.max(1, Math.floor(pw));
+  for (let s = 0; s < series.length; s++) {
+    ctx.strokeStyle = colors[s];
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 0; c < cols; c++) {
+      const i0 = Math.floor((c / cols) * n);
+      const i1 = Math.min(n - 1, Math.max(i0, Math.floor(((c + 1) / cols) * n)));
+      let lo = Infinity, hi = -Infinity;
+      for (let i = i0; i <= i1; i++) { const v = series[s][i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const x = padL + c + 0.5;
+      ctx.moveTo(x, Y(lo));
+      ctx.lineTo(x, Y(hi));
+    }
+    ctx.stroke();
+  }
+
+  ctx.font = "11px monospace";
+  for (let i = 0; i < labels.length; i++) {
+    ctx.fillStyle = colors[i];
+    ctx.fillText(labels[i], padL + 6 + i * 36, 12);
+  }
+  ctx.fillStyle = "#888";
+  ctx.fillText(unit, w - 28, 12);
+}
+
+// ============================================================
+// CSV
+// ============================================================
+function downloadCsv(sess) {
+  const [ox, oy, oz] = sess.h.gyroOff;
+  const load = sess.h.version === 2 ? sess.h.loadKg : "";
+  const rows = [`# MPA session: ${sess.name}`,
+                `# athlete=${sess.h.athlete} exercise=${sess.h.exercise} load_kg=${load} version=${sess.h.version}`,
+                "t_s,gx,gy,gz,ax,ay,az,gx_cal,gy_cal,gz_cal"];
+  for (let i = 0; i < sess.n; i++) {
+    const g = sess.ch;
+    rows.push([
+      (i / sess.h.rateHz).toFixed(4),
+      g[0][i], g[1][i], g[2][i], g[3][i], g[4][i], g[5][i],
+      g[0][i] - ox, g[1][i] - oy, g[2][i] - oz
+    ].join(","));
+  }
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = sess.name.replace(/\.bin$/, "") + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ============================================================
+// ANÁLISE (MCV, MVT, VL%)
+// ============================================================
+// Filtro Butterworth 2ª ordem via seções biquad, aplicado com fase zero
+// (forward + backward) - equivalente ao filtfilt do scipy.
+
+function butterLowpass(fc, fs, order) {
+  const nyq = fs / 2;
+  const wc = Math.tan(Math.PI * fc / nyq);
+  const k1 = Math.SQRT2 * wc;
+  const k2 = wc * wc;
+  const norm = 1 / (1 + k1 + k2);
+  const b0 = k2 * norm, b1 = 2 * b0, b2 = b0;
+  const a1 = 2 * (k2 - 1) * norm;
+  const a2 = (1 - k1 + k2) * norm;
+  return { b: [b0, b1, b2], a: [1, a1, a2] };
+}
+
+function filterFiltfilt(x, b, a) {
+  const n = x.length;
+  const pad = Math.min(3 * Math.max(b.length, a.length), n - 1);
+  if (pad <= 0) return x.slice();
+  // espelhamento simples
+  const ext = new Float64Array(n + 2 * pad);
+  for (let i = 0; i < pad; i++) ext[i] = 2 * x[0] - x[pad - i];
+  for (let i = 0; i < n; i++) ext[pad + i] = x[i];
+  for (let i = 0; i < pad; i++) ext[pad + n + i] = 2 * x[n - 1] - x[n - 2 - i];
+
+  const y1 = new Float64Array(ext.length);
+  for (let i = 0; i < ext.length; i++) {
+    let acc = b[0] * ext[i];
+    if (i >= 1) acc += b[1] * ext[i - 1] - a[1] * y1[i - 1];
+    if (i >= 2) acc += b[2] * ext[i - 2] - a[2] * y1[i - 2];
+    y1[i] = acc;
+  }
+  // backward
+  const y2 = new Float64Array(ext.length);
+  for (let i = ext.length - 1; i >= 0; i--) {
+    let acc = b[0] * y1[i];
+    if (i <= ext.length - 2) acc += b[1] * y1[i + 1] - a[1] * y2[i + 1];
+    if (i <= ext.length - 3) acc += b[2] * y1[i + 2] - a[2] * y2[i + 2];
+    y2[i] = acc;
+  }
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = y2[pad + i];
+  return out;
+}
+
+function detrendLinear(v) {
+  const n = v.length;
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sx += i; sy += v[i]; sxx += i*i; sxy += i*v[i]; }
+  const denom = n * sxx - sx * sx;
+  const slope = denom === 0 ? 0 : (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = v[i] - (slope * i + intercept);
+  return out;
+}
+
+function analyzeSession(sess) {
+  const fs = sess.h.rateHz;
+  const n = sess.n;
+
+  // 1) unidades físicas
+  // canais: 0=gx 1=gy 2=gz 3=ax 4=ay 5=az
+  const ax = new Float64Array(n), ay = new Float64Array(n), az = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    ax[i] = sess.ch[3][i] / ACC_LSB_PER_G * G_CONST;
+    ay[i] = sess.ch[4][i] / ACC_LSB_PER_G * G_CONST;
+    az[i] = sess.ch[5][i] / ACC_LSB_PER_G * G_CONST;
+  }
+
+  // 2) vetor vertical = média das primeiras N amostras
+  const nStatic = Math.min(N_STATIC, n);
+  let mx = 0, my = 0, mz = 0;
+  for (let i = 0; i < nStatic; i++) { mx += ax[i]; my += ay[i]; mz += az[i]; }
+  mx /= nStatic; my /= nStatic; mz /= nStatic;
+  const nm = Math.sqrt(mx*mx + my*my + mz*mz) || 1;
+  const up = [mx/nm, my/nm, mz/nm];
+
+  // 3) projeção no vertical
+  const aVert = new Float64Array(n);
+  for (let i = 0; i < n; i++) aVert[i] = ax[i]*up[0] + ay[i]*up[1] + az[i]*up[2];
+
+  // 4) filtro passa-baixa 10 Hz (fase zero)
+  const { b, a } = butterLowpass(FILT_FC, fs, FILT_ORDER);
+  const aVertF = filterFiltfilt(aVert, b, a);
+
+  // 5) integração trapezoidal + detrend
+  const v = new Float64Array(n);
+  const dt = 1 / fs;
+  for (let i = 1; i < n; i++) v[i] = v[i-1] + 0.5 * (aVertF[i] + aVertF[i-1]) * dt;
+  const vDet = detrendLinear(v);
+
+  // 6) detecção de eventos (cruzamento com histerese)
+  const upIdx = [], downIdx = [];
+  let state = 0;
+  for (let i = 1; i < n; i++) {
+    if (vDet[i] > V_MIN) {
+      if (state === -1) upIdx.push(i);
+      state = +1;
+    } else if (vDet[i] < -V_MIN) {
+      if (state === +1) downIdx.push(i);
+      state = -1;
+    }
+  }
+
+  // 7) segmentação em repetições (concêntrica = entre up e down seguinte)
+  const reps = [];
+  for (const i0 of upIdx) {
+    let i1 = -1;
+    for (const j of downIdx) { if (j > i0) { i1 = j; break; } }
+    if (i1 < 0 || i1 <= i0 + 2) continue;
+    const tConc = (i1 - i0) / fs;
+    let sum = 0, pv = -Infinity;
+    for (let k = i0; k < i1; k++) { sum += vDet[k]; if (vDet[k] > pv) pv = vDet[k]; }
+    const mcv = (sum / (i1 - i0));   // média da velocidade na concêntrica
+    reps.push({ i0, i1, tConc, mcv, pv });
+  }
+
+  // 8) agregação (descarta 1ª se N>=2)
+  const used = reps.length >= 2 ? reps.slice(1) : reps.slice();
+  let mcvMean = 0, mvt = 0, vlPct = 0;
+  if (used.length > 0) {
+    const mcvs = used.map(r => r.mcv).filter(Number.isFinite);
+    if (mcvs.length > 0) {
+      mcvMean = mcvs.reduce((a, b) => a + b, 0) / mcvs.length;
+      mvt = Math.min(...mcvs);
+      if (mcvs.length >= 2) vlPct = (mcvs[0] - mcvs[mcvs.length - 1]) / mcvs[0] * 100;
+    }
+  }
+
+  return { up, aVert: aVertF, v: vDet, upIdx, downIdx, reps, used, mcvMean, mvt, vlPct, load: sess.h.version === 2 ? sess.h.loadKg : null };
+}
+
+function showAnalysis(sess, res) {
+  showView("vAnalysis", `Análise · ${sess.h.athlete} · ${sess.h.exercise}`);
+  const msg = $("analysisMsg");
+  msg.className = "";
+  if (res.used.length === 0) {
+    msg.className = "";
+    msg.textContent = "Nenhuma repetição válida detectada. Tente baixar um arquivo com movimento real de barra.";
+  } else {
+    msg.className = "good";
+    msg.textContent = `Detectadas ${res.reps.length} repetições. Usadas no cálculo: ${res.used.length} (1ª descartada).`;
+  }
+  $("mcvVal").textContent = res.mcvMean ? res.mcvMean.toFixed(3) : "—";
+  $("mvtVal").textContent = res.mvt ? res.mvt.toFixed(3) : "—";
+  $("vlVal").textContent  = res.used.length >= 2 ? res.vlPct.toFixed(1) : "—";
+  $("repInfo").textContent = `Carga: ${res.load !== null ? res.load + " kg" : "não informada"} · Vetor vertical estimado: [${res.up.map(v => v.toFixed(2)).join(", ")}]`;
+
+  const tbody = document.querySelector("#repTable tbody");
+  tbody.innerHTML = "";
+  res.reps.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    const discartada = i === 0 && res.reps.length >= 2;
+    if (discartada) tr.className = "discard";
+    tr.innerHTML = `<td>R${i+1}${discartada ? " (desc.)" : ""}</td>
+                    <td>${r.mcv.toFixed(3)}</td>
+                    <td>${r.pv.toFixed(3)}</td>
+                    <td>${r.tConc.toFixed(3)}</td>`;
+    tbody.append(tr);
+  });
+
+  requestAnimationFrame(() => drawVelocity($("velCanvas"), res, sess.h.rateHz));
+}
+
+function drawVelocity(canvas, res, fs) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = rect.width, h = rect.height, padL = 48, padB = 18;
+  ctx.clearRect(0, 0, w, h);
+  const v = res.v, n = v.length;
+  if (n < 2) return;
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < n; i++) { if (v[i] < mn) mn = v[i]; if (v[i] > mx) mx = v[i]; }
+  const pad = (mx - mn) * 0.1 || 0.1;
+  mn -= pad; mx += pad;
+  const pw = w - padL, ph = h - padB;
+  const Y = (val) => ph - ((val - mn) / (mx - mn)) * ph;
+  const dur = (n - 1) / fs;
+
+  ctx.font = "10px monospace";
+  for (let k = 0; k <= 4; k++) {
+    const val = mn + (k / 4) * (mx - mn), y = Y(val);
+    ctx.strokeStyle = "#222";
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillStyle = "#888";
+    ctx.fillText(val.toFixed(2), 2, y - 2);
+  }
+  // linha do zero e thresholds
+  ctx.strokeStyle = "#555";
+  ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w, Y(0)); ctx.stroke();
+  ctx.strokeStyle = "#444";
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(padL, Y(V_MIN)); ctx.lineTo(w, Y(V_MIN)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padL, Y(-V_MIN)); ctx.lineTo(w, Y(-V_MIN)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // marcação das concêntricas
+  ctx.fillStyle = "rgba(255, 170, 210, 0.15)";
+  for (const r of res.reps) {
+    const x0 = padL + (r.i0 / (n - 1)) * pw;
+    const x1 = padL + (r.i1 / (n - 1)) * pw;
+    ctx.fillRect(x0, 0, x1 - x0, ph);
+  }
+
+  // linha da velocidade
+  ctx.strokeStyle = "#6cf";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = padL + (i / (n - 1)) * pw;
+    const y = Y(v[i]);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // legenda
+  ctx.fillStyle = "#6cf"; ctx.fillText("v vertical (m/s)", padL + 6, 12);
+  ctx.fillStyle = "#c2a";
+  res.reps.forEach((r, i) => {
+    const x = padL + (r.i0 / (n - 1)) * pw;
+    ctx.fillText(`R${i+1}`, x + 2, 24);
+  });
+  ctx.fillStyle = "#888";
+  ctx.fillText("t (s)", w - 30, h - 4);
+}
+
+function analyzeCsv(sess, res) {
+  const [ox, oy, oz] = sess.h.gyroOff;
+  const load = sess.h.version === 2 ? sess.h.loadKg : "";
+  const lines = [
+    `# MPA session: ${sess.name}`,
+    `# athlete=${sess.h.athlete} exercise=${sess.h.exercise} load_kg=${load} version=${sess.h.version}`,
+    `# up_vector=[${res.up.map(v => v.toFixed(4)).join(",")}]`,
+    `# MCV_mean=${res.mcvMean.toFixed(4)} m/s  MVT=${res.mvt.toFixed(4)} m/s  VL%=${res.vlPct.toFixed(2)}`,
+    "# rep,t_start,t_end,t_conc,mcv,pv",
+    "t_s,gx,gy,gz,ax,ay,az,gx_cal,gy_cal,gz_cal,a_vert_m_s2,v_vert_m_s"
+  ];
+  for (const [i, r] of res.reps.entries()) {
+    lines.push(`# R${i+1},${(r.i0 / sess.h.rateHz).toFixed(4)},${(r.i1 / sess.h.rateHz).toFixed(4)},${r.tConc.toFixed(4)},${r.mcv.toFixed(4)},${r.pv.toFixed(4)}`);
+  }
+  for (let i = 0; i < sess.n; i++) {
+    const g = sess.ch;
+    lines.push([
+      (i / sess.h.rateHz).toFixed(4),
+      g[0][i], g[1][i], g[2][i], g[3][i], g[4][i], g[5][i],
+      g[0][i] - ox, g[1][i] - oy, g[2][i] - oz,
+      res.aVert[i].toFixed(5), res.v[i].toFixed(5)
+    ].join(","));
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = sess.name.replace(/\.bin$/, "") + "_analise.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ============================================================
+// Ligações de eventos
+// ============================================================
+$("btnMap").addEventListener("click", openMapping);
+$("btnSessions").addEventListener("click", openSessions);
+$("btnCloseOverlay").addEventListener("click", closeOverlay);
+$("btnRecStart").addEventListener("click", recStart);
+$("btnRecStop").addEventListener("click", recStop);
+$("btnDoneSend").addEventListener("click", openSessions);
+$("btnDoneNew").addEventListener("click", openMapping);
+$("btnListRefresh").addEventListener("click", requestList);
+$("btnForceStop").addEventListener("click", recStop);
+$("btnSessCsv").addEventListener("click", () => currentSession && downloadCsv(currentSession));
+$("btnSessDel").addEventListener("click", () => currentSession && deleteSession(currentSession.name));
+$("btnSessBack").addEventListener("click", () => { showView("vList", "Sessões salvas"); renderList(); });
+$("btnSessAnalyze").addEventListener("click", () => {
+  if (!currentSession) return;
+  const res = analyzeSession(currentSession);
+  currentAnalysis = res;
+  showAnalysis(currentSession, res);
+});
+$("btnAnalyzeCsv").addEventListener("click", () => {
+  if (currentSession && currentAnalysis) analyzeCsv(currentSession, currentAnalysis);
+});
+$("btnAnalyzeBack").addEventListener("click", () => {
+  if (currentSession) showSession(currentSession);
+  else showView("vList", "Sessões salvas");
+});
+
+$("btnConnect").addEventListener("click", connect);
+$("btnStart").addEventListener("click", startStream);
+$("btnStop").addEventListener("click", stopStream);
+
+if (!navigator.bluetooth) {
+  setStatus("Web Bluetooth não disponível. Use Chrome em localhost.", "err");
+  $("btnConnect").disabled = true;
+} else {
+  render();
+}
+</script>
+
+</body>
+</html>
